@@ -1,0 +1,40 @@
+name: Buffett Finder Daily
+
+on:
+  schedule:
+    # 08:30 SGT (00:30 UTC) on weekdays — after Asia markets open
+    - cron: "30 0 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      markets:
+        description: "Markets to run (space-separated: sgx us hk)"
+        default: "sgx us hk"
+        required: false
+      top:
+        description: "Top N passers per market"
+        default: "5"
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run telegram bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python telegram_bot.py \
+            --markets ${{ github.event.inputs.markets || 'sgx us hk' }} \
+            --top ${{ github.event.inputs.top || '5' }}

@@ -1,0 +1,86 @@
+# SGX universe - one ticker per line. `#` starts a comment (inline or full-line).
+# Broad list: STI + mid-caps + most major REITs + healthcare + tech + consumer.
+
+# --- Banks & Financials ---
+D05.SI    # DBS
+O39.SI    # OCBC
+U11.SI    # UOB
+S41.SI    # Hong Leong Finance
+
+# --- Telcos / Media ---
+Z74.SI    # Singtel
+CC3.SI    # StarHub
+N4E.SI    # NetLink NBN Trust
+
+# --- Industrials / Conglomerates ---
+F34.SI    # Wilmar
+BN4.SI    # Keppel
+S63.SI    # ST Engineering
+U96.SI    # Sembcorp Industries
+C07.SI    # Jardine C&C
+H78.SI    # Hongkong Land
+BS6.SI    # Yangzijiang Shipbuilding
+YF8.SI    # Yangzijiang Financial
+5E2.SI    # Seatrium
+J36.SI    # Jardine Matheson
+
+# --- Property Developers ---
+U14.SI    # UOL Group
+C09.SI    # City Developments
+F17.SI    # GuocoLand
+TQ5.SI    # Frasers Property
+1D0.SI    # PropNex
+
+# --- Transport / Logistics ---
+C6L.SI    # SIA
+C52.SI    # ComfortDelGro
+S58.SI    # SATS
+G13.SI    # Genting Singapore
+S59.SI    # SIA Engineering
+
+# --- Consumer / F&B / Retail ---
+F99.SI    # F&N
+D01.SI    # DFI Retail
+Y92.SI    # ThaiBev
+OV8.SI    # Sheng Siong
+5DD.SI    # Japfa
+P34.SI    # Delfi
+
+# --- Healthcare ---
+Q0F.SI    # IHH Healthcare
+QC7.SI    # Raffles Medical
+1F1.SI    # Q&M Dental
+
+# --- Tech / Semis / Electronics / Other ---
+AWX.SI    # AEM Holdings
+5CP.SI    # Silverlake Axis
+BDA.SI    # UMS Integration
+V03.SI    # Venture Corp
+S08.SI    # Singpost
+5OC.SI    # iFAST
+S68.SI    # SGX
+9CI.SI    # CapitaLand Investment
+
+# --- REITs: Office / Retail / Diversified ---
+C38U.SI   # CICT
+N2IU.SI   # Mapletree Pan Asia Commercial Trust
+J69U.SI   # Frasers Centrepoint Trust
+T82U.SI   # Suntec REIT
+K71U.SI   # Keppel REIT
+TS0U.SI   # OUE Commercial REIT
+P40U.SI   # Starhill Global REIT
+
+# --- REITs: Industrial / Logistics / Data Centre ---
+A17U.SI   # Ascendas REIT
+M44U.SI   # Mapletree Logistics
+ME8U.SI   # Mapletree Industrial
+AJBU.SI   # Keppel DC REIT
+J91U.SI   # ESR-LOGOS REIT
+BUOU.SI   # Frasers Logistics & Commercial
+M1GU.SI   # Alpha Integrated REIT (formerly Sabana Industrial REIT)
+
+# --- REITs: Hospitality / Healthcare / US ---
+HMN.SI    # CDL Hospitality
+Q5T.SI    # Far East Hospitality
+C2PU.SI   # ParkwayLife REIT
+BTOU.SI   # Manulife US REIT (USD)

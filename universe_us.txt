@@ -1,0 +1,149 @@
+# US universe - NYSE/NASDAQ tickers, no suffix. # starts a comment.
+# Bias toward classic value / Buffett-style names plus mainstream blue chips.
+
+# --- Banks & Financials ---
+JPM
+BAC
+WFC
+C
+USB
+PNC
+GS
+MS
+BLK
+SCHW
+AXP
+V
+MA
+COF
+BRK-B
+
+# --- Insurance ---
+TRV
+ALL
+PGR
+CB
+MET
+PRU
+AIG
+
+# --- Consumer Staples ---
+KO
+PEP
+PG
+CL
+KMB
+WMT
+COST
+TGT
+KR
+GIS
+K
+MDLZ
+MO
+PM
+STZ
+
+# --- Consumer Discretionary ---
+HD
+LOW
+MCD
+SBUX
+NKE
+DIS
+F
+GM
+TSLA
+
+# --- Healthcare ---
+JNJ
+PFE
+MRK
+ABBV
+LLY
+BMY
+ABT
+TMO
+DHR
+UNH
+CVS
+CI
+ELV
+GILD
+AMGN
+
+# --- Industrials ---
+MMM
+CAT
+DE
+HON
+GE
+BA
+LMT
+NOC
+RTX
+GD
+UPS
+FDX
+CSX
+UNP
+NSC
+WM
+
+# --- Energy ---
+XOM
+CVX
+COP
+EOG
+SLB
+PSX
+VLO
+MPC
+OXY
+
+# --- Utilities ---
+NEE
+SO
+DUK
+D
+AEP
+
+# --- Telecom ---
+T
+VZ
+TMUS
+
+# --- Tech / Software ---
+AAPL
+MSFT
+GOOGL
+META
+AMZN
+NVDA
+INTC
+IBM
+CSCO
+ORCL
+ADBE
+CRM
+TXN
+QCOM
+AMD
+
+# --- Materials ---
+LIN
+APD
+SHW
+DOW
+
+# --- REITs ---
+O
+SPG
+PLD
+AMT
+EQIX
+PSA
+WELL
+AVB
+EQR
+VICI

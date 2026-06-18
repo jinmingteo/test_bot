@@ -1,0 +1,80 @@
+# HK universe - HKEX tickers, .HK suffix. # starts a comment.
+
+# --- Banks & Insurance ---
+0005.HK   # HSBC
+0011.HK   # Hang Seng Bank
+0939.HK   # China Construction Bank
+1398.HK   # ICBC
+3988.HK   # Bank of China
+2388.HK   # BOC Hong Kong
+1288.HK   # Agricultural Bank of China
+3328.HK   # Bank of Communications
+1299.HK   # AIA
+2318.HK   # Ping An Insurance
+2628.HK   # China Life
+
+# --- Tech / Internet ---
+0700.HK   # Tencent
+9988.HK   # Alibaba
+3690.HK   # Meituan
+1024.HK   # Kuaishou
+9618.HK   # JD.com
+9999.HK   # NetEase
+0981.HK   # SMIC
+0992.HK   # Lenovo
+
+# --- Telcos ---
+0941.HK   # China Mobile
+0762.HK   # China Unicom
+0728.HK   # China Telecom
+
+# --- Energy ---
+0883.HK   # CNOOC
+0386.HK   # Sinopec
+0857.HK   # PetroChina
+
+# --- Industrials / Conglomerates ---
+0001.HK   # CK Hutchison
+0002.HK   # CLP Holdings
+0003.HK   # Hong Kong & China Gas
+0006.HK   # Power Assets
+0019.HK   # Swire Pacific A
+0066.HK   # MTR Corp
+0027.HK   # Galaxy Entertainment
+1928.HK   # Sands China
+
+# --- Property Developers ---
+0016.HK   # Sun Hung Kai Properties
+0017.HK   # New World Development
+0688.HK   # COLI
+1109.HK   # China Resources Land
+0012.HK   # Henderson Land
+0083.HK   # Sino Land
+0101.HK   # Hang Lung Properties
+
+# --- Exchange / Financials ---
+0388.HK   # HKEX
+
+# --- Consumer ---
+0291.HK   # China Resources Beer
+0322.HK   # Tingyi
+0151.HK   # Want Want China
+1044.HK   # Hengan
+2020.HK   # Anta Sports
+
+# --- Healthcare / Pharma ---
+1093.HK   # CSPC Pharmaceutical
+1099.HK   # Sinopharm
+2269.HK   # WuXi Biologics
+
+# --- Autos ---
+0175.HK   # Geely
+1211.HK   # BYD
+2238.HK   # Guangzhou Auto
+
+# --- REITs ---
+0823.HK   # Link REIT
+0405.HK   # Yuexiu REIT
+0778.HK   # Fortune REIT
+0808.HK   # Prosperity REIT
+0435.HK   # Sunlight REIT
