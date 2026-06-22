@@ -21,6 +21,7 @@ CACHE_ROOT = pathlib.Path(__file__).parent / "cache"
 _COMPLETENESS_FIELDS = (
     "price", "market_cap", "pe", "pb", "roe", "debt_to_equity",
     "eps", "bvps", "fcf_positive_years", "shares_outstanding",
+    "operating_margin", "interest_coverage",
 )
 
 # Suppress yfinance's noisy per-ticker HTTPError prints (delisted/renamed tickers)
@@ -53,6 +54,9 @@ class StockData:
     # Quality / consistency
     roe_history: list[float] = field(default_factory=list)  # percent, most recent first
     roic: float | None = None  # percent
+    operating_margin: float | None = None  # percent
+    interest_coverage: float | None = None  # EBIT / interest expense (x)
+    peg: float | None = None  # PEG ratio (P/E divided by EPS growth)
     is_reit: bool = False
     is_bank: bool = False
     analyst_mean_target: float | None = None
@@ -296,6 +300,36 @@ def _compute_roic(t: yf.Ticker, info: dict) -> float | None:
         return None
 
 
+def _interest_coverage(t: yf.Ticker) -> float | None:
+    """EBIT / Interest Expense from latest annual income statement. Returns x (multiple)."""
+    try:
+        fin = t.financials
+        if fin is None or fin.empty:
+            return None
+        ebit = None
+        for label in ("EBIT", "Operating Income", "Earnings Before Interest And Taxes"):
+            if label in fin.index:
+                ebit = fin.loc[label].iloc[0]
+                break
+        intx = None
+        for label in ("Interest Expense", "Interest Expense Non Operating", "Net Interest Income"):
+            if label in fin.index:
+                intx = fin.loc[label].iloc[0]
+                break
+        if ebit is None or intx is None:
+            return None
+        if isinstance(ebit, float) and math.isnan(ebit):
+            return None
+        if isinstance(intx, float) and math.isnan(intx):
+            return None
+        intx = abs(float(intx))  # yfinance sometimes signs negative
+        if intx == 0:
+            return None  # no debt → coverage is infinite; let other checks handle leverage
+        return float(ebit) / intx
+    except Exception:
+        return None
+
+
 def _completeness(sd: "StockData") -> float:
     present = sum(1 for name in _COMPLETENESS_FIELDS if getattr(sd, name) not in (None, 0, 0.0))
     return present / len(_COMPLETENESS_FIELDS)
@@ -363,8 +397,12 @@ def fetch_stock(ticker: str) -> StockData:
         sd.fcf_positive_years = _count_positive_fcf_years(t)
         sd.fcf_history = _fcf_history(t)
         sd.roe_history = _roe_history(t)
+        om = _num(info.get("operatingMargins"))
+        sd.operating_margin = om * 100 if om is not None else None
+        sd.peg = _num(info.get("trailingPegRatio")) or _num(info.get("pegRatio"))
         if not (sd.is_bank or sd.is_reit):
             sd.roic = _compute_roic(t, info)
+            sd.interest_coverage = _interest_coverage(t)
 
         # analyst sentiment
         try:
@@ -458,8 +496,9 @@ def compact_bundle(sd: StockData) -> str:
         f"Currency: {sd.currency}",
         f"Price: {fmt_money(sd.price, sd.currency)}",
         f"Market cap: {fmt_money(sd.market_cap, sd.currency)}",
-        f"P/E: {fmt_num(sd.pe)}  P/B: {fmt_num(sd.pb)}  ROE: {fmt_num(sd.roe, '%')}  ROIC: {fmt_num(sd.roic, '%')}",
-        f"Debt/Equity: {fmt_num(sd.debt_to_equity)}  Dividend yield: {fmt_num(sd.dividend_yield, '%')}",
+        f"P/E: {fmt_num(sd.pe)}  P/B: {fmt_num(sd.pb)}  PEG: {fmt_num(sd.peg)}",
+        f"ROE: {fmt_num(sd.roe, '%')}  ROIC: {fmt_num(sd.roic, '%')}  Operating margin: {fmt_num(sd.operating_margin, '%')}",
+        f"Debt/Equity: {fmt_num(sd.debt_to_equity)}  Interest coverage: {fmt_num(sd.interest_coverage, 'x')}  Dividend yield: {fmt_num(sd.dividend_yield, '%')}",
         f"EPS: {fmt_num(sd.eps)}  BVPS: {fmt_num(sd.bvps)}",
         f"Positive FCF years (last 5): {sd.fcf_positive_years}",
         f"ROE history (most recent first, %): "

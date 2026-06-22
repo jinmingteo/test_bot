@@ -80,6 +80,22 @@ def owner_earnings_dcf(
     return pv / shares_outstanding
 
 
+def fcf_cagr(fcf_history: list[float]) -> float | None:
+    """5y FCF CAGR over the available positive history (oldest → newest).
+    Returns fraction (e.g. 0.08 = 8%) or None if not enough data."""
+    pos = [f for f in fcf_history if f and f > 0]
+    if len(pos) < 3:
+        return None
+    oldest, newest = pos[-1], pos[0]
+    years = len(pos) - 1
+    if oldest <= 0 or newest <= 0 or years <= 0:
+        return None
+    try:
+        return (newest / oldest) ** (1 / years) - 1
+    except (ValueError, ZeroDivisionError):
+        return None
+
+
 def roe_consistency(roe_history: list[float]) -> tuple[float | None, float | None, bool, bool]:
     """Returns (mean, stdev, declining_trend, too_volatile).
     declining_trend: avg of newest half is materially below avg of oldest half.
@@ -136,10 +152,18 @@ def evaluate(sd: StockData) -> FilterResult:
         roe_min = 10.0
         roic_min = 10.0
 
+    # P/E with PEG-quality override: allow up to 35 for genuine compounders
+    # (PEG < 1.5 AND ROE > 20% — i.e. growth justifies the multiple).
     if sd.pe is None or sd.pe <= 0:
         reasons.append("no positive P/E")
-    elif sd.pe > 25:
-        reasons.append(f"P/E too high ({sd.pe:.1f})")
+    else:
+        quality_override = (
+            sd.peg is not None and sd.peg > 0 and sd.peg < 1.5
+            and sd.roe is not None and sd.roe > 20.0
+        )
+        pe_cap = 35 if quality_override else 25
+        if sd.pe > pe_cap:
+            reasons.append(f"P/E too high ({sd.pe:.1f} > {pe_cap})")
 
     if sd.pb is None:
         reasons.append("no P/B")
@@ -165,6 +189,22 @@ def evaluate(sd: StockData) -> FilterResult:
             pass
         elif sd.roic < roic_min:
             reasons.append(f"ROIC {sd.roic:.1f}% < {roic_min}%")
+
+    # Operating margin — direct moat signal for non-financials (margin = pricing power)
+    if not (sd.is_bank or sd.is_reit):
+        if sd.operating_margin is not None and sd.operating_margin < 15.0:
+            reasons.append(f"operating margin {sd.operating_margin:.1f}% < 15%")
+
+    # Interest coverage — catches over-leveraged "cheap" stocks D/E alone misses
+    if not (sd.is_bank or sd.is_reit):
+        if sd.interest_coverage is not None and sd.interest_coverage < 5.0:
+            reasons.append(f"interest coverage {sd.interest_coverage:.1f}x < 5x")
+
+    # FCF CAGR — reject melting ice cubes (negative-growth owner earnings)
+    if not (sd.is_bank or sd.is_reit):
+        cagr = fcf_cagr(sd.fcf_history)
+        if cagr is not None and cagr < 0:
+            reasons.append(f"FCF CAGR {cagr*100:.1f}% < 0% (declining owner earnings)")
 
     # ROE consistency — reject one-off-good-year cyclicals
     roe_mean, roe_stdev, declining, too_volatile = roe_consistency(sd.roe_history)
