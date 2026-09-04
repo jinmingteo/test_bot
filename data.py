@@ -11,8 +11,12 @@ import time
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any
 
-import feedparser
 import yfinance as yf
+
+try:
+    import feedparser
+except ImportError:  # optional — tests and dry-runs still work without news fallback
+    feedparser = None
 
 CACHE_ROOT = pathlib.Path(__file__).parent / "cache"
 
@@ -21,7 +25,7 @@ CACHE_ROOT = pathlib.Path(__file__).parent / "cache"
 _COMPLETENESS_FIELDS = (
     "price", "market_cap", "pe", "pb", "roe", "debt_to_equity",
     "eps", "bvps", "fcf_positive_years", "shares_outstanding",
-    "operating_margin", "interest_coverage",
+    "operating_margin", "interest_coverage", "week_52_high",
 )
 
 # Suppress yfinance's noisy per-ticker HTTPError prints (delisted/renamed tickers)
@@ -57,6 +61,13 @@ class StockData:
     operating_margin: float | None = None  # percent
     interest_coverage: float | None = None  # EBIT / interest expense (x)
     peg: float | None = None  # PEG ratio (P/E divided by EPS growth)
+    week_52_high: float | None = None
+    week_52_low: float | None = None
+    pct_from_high: float | None = None  # fraction; -0.22 = 22% below 52w high
+    return_1y: float | None = None  # fraction
+    sma_200: float | None = None
+    beta: float | None = None
+    earnings_date: str = ""
     is_reit: bool = False
     is_bank: bool = False
     analyst_mean_target: float | None = None
@@ -400,6 +411,19 @@ def fetch_stock(ticker: str) -> StockData:
         om = _num(info.get("operatingMargins"))
         sd.operating_margin = om * 100 if om is not None else None
         sd.peg = _num(info.get("trailingPegRatio")) or _num(info.get("pegRatio"))
+        sd.week_52_high = _pos(info.get("fiftyTwoWeekHigh"))
+        sd.week_52_low = _pos(info.get("fiftyTwoWeekLow"))
+        if sd.price and sd.week_52_high and sd.week_52_high > 0:
+            sd.pct_from_high = sd.price / sd.week_52_high - 1.0
+        sd.return_1y = _num(info.get("52WeekChange")) or _num(info.get("fiftyTwoWeekChange"))
+        sd.sma_200 = _pos(info.get("twoHundredDayAverage"))
+        sd.beta = _num(info.get("beta"))
+        ts = _num(info.get("earningsTimestamp")) or _num(info.get("earningsTimestampStart"))
+        if ts:
+            try:
+                sd.earnings_date = _dt.datetime.utcfromtimestamp(int(ts)).date().isoformat()
+            except (OverflowError, OSError, ValueError):
+                sd.earnings_date = ""
         if not (sd.is_bank or sd.is_reit):
             sd.roic = _compute_roic(t, info)
             sd.interest_coverage = _interest_coverage(t)
@@ -441,6 +465,8 @@ def fetch_stock(ticker: str) -> StockData:
 
 
 def _google_news_fallback(company: str, market: str = "SGX", limit: int = 5) -> list[dict]:
+    if feedparser is None:
+        return []
     try:
         locale = {
             "SGX": ("en-SG", "SG", "SG:en", "SGX"),
@@ -483,12 +509,16 @@ def fmt_num(v: float | None, suffix: str = "") -> str:
     return f"{v:.2f}{suffix}"
 
 
-def compact_bundle(sd: StockData) -> str:
-    """Render a stock as a terse plain-text bundle (~400-600 tokens)."""
+def compact_bundle(sd: StockData, extra: str = "") -> str:
+    """Render a stock as a terse plain-text bundle (~400-700 tokens)."""
     kind = "REIT" if sd.is_reit else "Bank" if sd.is_bank else "Company"
     upside = ""
     if sd.analyst_mean_target and sd.price:
         upside = f" ({(sd.analyst_mean_target/sd.price - 1)*100:+.1f}% upside)"
+    from_high = "n/a"
+    if sd.pct_from_high is not None:
+        from_high = f"{sd.pct_from_high*100:+.1f}% vs 52w high"
+    ret_1y = "n/a" if sd.return_1y is None else f"{sd.return_1y*100:+.1f}%"
     lines = [
         f"Ticker: {sd.ticker} ({kind})",
         f"Name: {sd.name}",
@@ -496,6 +526,9 @@ def compact_bundle(sd: StockData) -> str:
         f"Currency: {sd.currency}",
         f"Price: {fmt_money(sd.price, sd.currency)}",
         f"Market cap: {fmt_money(sd.market_cap, sd.currency)}",
+        f"52w range: {fmt_money(sd.week_52_low, sd.currency)} – {fmt_money(sd.week_52_high, sd.currency)} ({from_high})",
+        f"1y return: {ret_1y}  SMA200: {fmt_money(sd.sma_200, sd.currency)}  Beta: {fmt_num(sd.beta)}",
+        f"Next earnings: {sd.earnings_date or 'n/a'}",
         f"P/E: {fmt_num(sd.pe)}  P/B: {fmt_num(sd.pb)}  PEG: {fmt_num(sd.peg)}",
         f"ROE: {fmt_num(sd.roe, '%')}  ROIC: {fmt_num(sd.roic, '%')}  Operating margin: {fmt_num(sd.operating_margin, '%')}",
         f"Debt/Equity: {fmt_num(sd.debt_to_equity)}  Interest coverage: {fmt_num(sd.interest_coverage, 'x')}  Dividend yield: {fmt_num(sd.dividend_yield, '%')}",
@@ -509,6 +542,8 @@ def compact_bundle(sd: StockData) -> str:
         f"target {fmt_money(sd.analyst_mean_target, sd.currency)}{upside} | "
         f"{sd.analyst_count} analysts",
     ]
+    if extra:
+        lines.append(extra)
     if sd.news:
         lines.append("Recent news:")
         for n in sd.news[:8]:

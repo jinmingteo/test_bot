@@ -50,24 +50,31 @@ def system_prompt(market: str) -> str:
     return f"{BUFFETT_SYSTEM_CORE}\n\n{ctx}"
 
 
-HAIKU_TRIAGE_TASK = """This stock has already passed a quantitative value-investing filter (cheap on P/E, P/B, ROE, margin-of-safety). Your job is to triage qualitatively: does it look like something Warren Buffett would want to investigate further?
+HAIKU_TRIAGE_TASK = """This stock has already passed a quantitative value-investing filter (cheapness, quality, setup). Your job is to triage qualitatively: is it worth a full write-up THIS WEEK, or is it a familiar name with nothing new?
 
-Reason only from the data bundle and from generic sector knowledge (e.g. "bank → NIM-sensitive", "REIT → rate-sensitive"). Do NOT invent specific facts (ownership stakes, named properties, tenant names, historical events) that are not in the bundle.
+Reason only from the data bundle and from generic sector knowledge (e.g. "bank → NIM-sensitive", "REIT → rate-sensitive"). Do NOT invent specific facts that are not in the bundle.
 
 Rate this stock on three dimensions, one short sentence each:
 
 - MOAT (1-5):
 - MANAGEMENT (1-5, infer from capital allocation / dividend record / available signals):
 - FINANCIAL HEALTH (1-5):
+- WHAT'S NEW (1-5): 1 = same story as always, 5 = genuine new information in price, news, or setup (drawdown, earnings, lens-relevant change). If the run context says STALE, this score should usually be 1-2 unless news or valuation moved.
 
 Then on a final line write exactly one of:
 VERDICT: PROMOTE
 VERDICT: DROP
 
-Decision rule: PROMOTE if any score is >= 4 OR all three scores are >= 3 (i.e. nothing obviously broken). DROP only if there is a clear red flag — declining business, poor capital allocation, structurally weak balance sheet, or a moat you cannot identify at all. Lean toward PROMOTE when uncertain — the deeper Opus analysis will sort it out."""
+Decision rule:
+- DROP if there is a clear red flag (declining business, poor capital allocation, structurally weak balance sheet, no identifiable moat).
+- DROP if WHAT'S NEW <= 2 AND the run context is STALE — do not promote a rerun of last week's essay.
+- PROMOTE if the name is NEW/MOVED/RETURNED and nothing is obviously broken.
+- PROMOTE if any of moat/management/health is >= 4 AND WHAT'S NEW >= 3.
+Lean toward DROP on stale names. The point of triage is to stop repeating the same analysis."""
 
 
-OPUS_DEEP_DIVE_TASK = """Produce a full Buffett-style value investing report on this stock.
+def opus_deep_dive_task(lens: dict[str, str]) -> str:
+    return f"""Produce a Buffett-style value investing report on this stock. It must NOT be a generic 9-section brochure — those all read the same.
 
 GROUNDING RULE — READ CAREFULLY:
 Only state specific factual claims (company history, ownership %, asset counts, segment splits, lease tenants, master-lease expiry dates, regulatory events, M&A, specific named subsidiaries) if they are explicitly present in the data bundle above OR clearly derivable from the numbers provided.
@@ -76,20 +83,20 @@ For anything not in the bundle, do NOT invent. Instead either:
 - Reason at the level the data supports (sector dynamics, ratios, ranges), or
 - Write `[not in data]` and skip the claim.
 
-Do not cite specific year-by-year DPU history, named tenants, named properties, ownership stakes, or rebrand history unless those exact facts appear in the bundle. Generic sector reasoning ("REIT exposed to refinancing cost", "bank's NIM is rate-sensitive") is fine — fabricated specifics ("Toshin master lease until 2025", "owns 107 properties", "rebranded from X in 2021") are not.
+Do not cite specific year-by-year DPU history, named tenants, named properties, ownership stakes, or rebrand history unless those exact facts appear in the bundle. Generic sector reasoning is fine — fabricated specifics are not.
 
 This is a hard rule. A shorter report with verifiable claims is far more valuable than a longer report with plausible-sounding but unverified specifics.
 
-Structure:
+MANDATED LENS THIS WEEK — {lens['title']}:
+{lens['task']}
 
-1. Business summary (2-3 lines)
-2. Moat assessment (specific sources of competitive advantage, or absence thereof)
-3. Management & capital allocation
-4. Financial health (use bank metrics if bank, REIT metrics if REIT, owner-earnings/FCF metrics otherwise)
-5. Recent news & catalysts — synthesise the headlines provided. Explicitly classify each material item as either (a) DURABLE (structural change to business: regulation, management, demand, margins, M&A) or (b) ONE-TIME / NOISE (one-off charges, divestments, sell-offs, single-quarter swings, broker rating tweaks, price moves). State which items, if any, should change the intrinsic value vs which should be ignored.
-6. Analyst consensus — state it, then state whether you AGREE or DISAGREE and why
-7. Intrinsic value calculation with explicit assumptions (growth, discount rate, terminal). For banks use justified P/B × book value or DDM; for REITs use DPU yield vs required yield, plus P/NAV.
-8. Margin of safety (price vs intrinsic, as %)
-9. VERDICT: BUY / WATCH / PASS — one line with the single most important reason
+Required structure (this replaces the old 9-section template):
 
-Keep total length under ~600 words. Be numerical, specific, and direct."""
+1. ONE-LINE PITCH — business in one sentence + why the price might be wrong.
+2. LENS ANALYSIS — answer the mandated lens above with numbers from the bundle. This is the core of the report (about half the words).
+3. BEAR CASE — the single most damaging way this is cheap for a reason. Falsifiable kill criterion in one sentence.
+4. NON-OBVIOUS — one thing a ratio screen would miss. If you cannot name one, say so.
+5. VALUATION — start from the Stage 1 intrinsic already in the bundle context if present; do not silently replace it with a more generous number. State whether you AGREE with that intrinsic or would haircut it, and the resulting margin of safety. For banks: justified P/B. For REITs: P/B + yield vs required yield.
+6. VERDICT: BUY / WATCH / PASS — one line, plus the kill criterion. Prefer WATCH/PASS on stale names unless something actually changed.
+
+Keep total length under ~500 words. Be numerical, specific, and direct. If the run context says this name is STALE, assume the reader already knows the bull case."""

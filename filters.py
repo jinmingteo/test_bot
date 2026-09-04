@@ -13,13 +13,18 @@ class FilterResult:
     sd: StockData
     passed: bool
     margin_of_safety: float | None  # 1 - price/intrinsic; >0 means undervalued
-    intrinsic_estimate: float | None  # the value used for MoS (best of Graham/DCF)
-    intrinsic_method: str  # "graham" | "dcf" | "pb-proxy" | "none"
+    intrinsic_estimate: float | None  # the value used for MoS
+    intrinsic_method: str  # "graham" | "dcf" | "conservative" | "justified-pb" | "pb+yield" | "pb-proxy" | "none"
     intrinsic_graham: float | None
     intrinsic_dcf: float | None
     roe_mean: float | None
     roe_stdev: float | None
     reasons: list[str]
+    cheapness: float | None = None  # 0-1
+    quality: float | None = None  # 0-1
+    setup: float | None = None  # 0-1
+    composite: float | None = None  # 0-100, ranking key
+    near_miss: bool = False
 
 
 def graham_number(eps: float | None, bvps: float | None) -> float | None:
@@ -81,15 +86,16 @@ def owner_earnings_dcf(
 
 
 def fcf_cagr(fcf_history: list[float]) -> float | None:
-    """5y FCF CAGR over the available positive history (oldest → newest).
-    Returns fraction (e.g. 0.08 = 8%) or None if not enough data."""
-    pos = [f for f in fcf_history if f and f > 0]
-    if len(pos) < 3:
+    """Endpoint FCF CAGR over the full available window (oldest → newest).
+    Uses actual period endpoints, not the positive-only subsequence, so a
+    loss year in the middle does not silently shorten the window."""
+    clean = [f for f in fcf_history if f is not None]
+    if len(clean) < 3:
         return None
-    oldest, newest = pos[-1], pos[0]
-    years = len(pos) - 1
-    if oldest <= 0 or newest <= 0 or years <= 0:
+    newest, oldest = clean[0], clean[-1]
+    if oldest <= 0 or newest <= 0:
         return None
+    years = len(clean) - 1
     try:
         return (newest / oldest) ** (1 / years) - 1
     except (ValueError, ZeroDivisionError):
@@ -190,10 +196,11 @@ def evaluate(sd: StockData) -> FilterResult:
         elif sd.roic < roic_min:
             reasons.append(f"ROIC {sd.roic:.1f}% < {roic_min}%")
 
-    # Operating margin — direct moat signal for non-financials (margin = pricing power)
+    # Operating margin — hard floor at 8% (junk), 8-15% is a quality penalty not a drop.
+    # The old 15% gate was why SG grocers / retailers never appeared.
     if not (sd.is_bank or sd.is_reit):
-        if sd.operating_margin is not None and sd.operating_margin < 15.0:
-            reasons.append(f"operating margin {sd.operating_margin:.1f}% < 15%")
+        if sd.operating_margin is not None and sd.operating_margin < 8.0:
+            reasons.append(f"operating margin {sd.operating_margin:.1f}% < 8%")
 
     # Interest coverage — catches over-leveraged "cheap" stocks D/E alone misses
     if not (sd.is_bank or sd.is_reit):
@@ -225,20 +232,23 @@ def evaluate(sd: StockData) -> FilterResult:
     method = "none"
     mos = None
 
-    if sd.is_bank or sd.is_reit:
-        # P/B proxy — Graham/DCF not meaningful for financials
-        if sd.pb is not None:
-            mos = 1 - (sd.pb / pb_max)
-            method = "pb-proxy"
+    if sd.is_bank:
+        mos, intrinsic, method = _bank_intrinsic(sd, pb_max)
+    elif sd.is_reit:
+        mos, intrinsic, method = _reit_intrinsic(sd, pb_max)
     else:
         intrinsic_graham = graham_number(sd.eps, sd.bvps)
         intrinsic_dcf = owner_earnings_dcf(sd.fcf_history, sd.shares_outstanding)
-
-        # Pick best (highest) intrinsic — but DCF is the preferred number when available
-        candidates = [(intrinsic_dcf, "dcf"), (intrinsic_graham, "graham")]
-        candidates = [(v, m) for v, m in candidates if v is not None and v > 0]
+        # Conservative: use the LOWER of Graham and DCF when both exist.
+        # Taking the max (old behaviour) inflated MoS and kept surfacing the same "cheap" names.
+        candidates = [(v, m) for v, m in (
+            (intrinsic_dcf, "dcf"),
+            (intrinsic_graham, "graham"),
+        ) if v is not None and v > 0]
         if candidates:
-            intrinsic, method = max(candidates, key=lambda x: x[0])
+            intrinsic, method = min(candidates, key=lambda x: x[0])
+            if len(candidates) == 2:
+                method = f"conservative({method})"
             if sd.price:
                 mos = 1 - (sd.price / intrinsic)
                 if mos < 0.15:
@@ -248,6 +258,9 @@ def evaluate(sd: StockData) -> FilterResult:
                     )
         else:
             reasons.append("no intrinsic value (insufficient data for Graham or DCF)")
+
+    cheap, quality, setup, composite = score_stock(sd, mos, roe_mean, roe_stdev)
+    near_miss = _is_near_miss(reasons)
 
     passed = len(reasons) == 0
     return FilterResult(
@@ -261,14 +274,166 @@ def evaluate(sd: StockData) -> FilterResult:
         roe_mean=roe_mean,
         roe_stdev=roe_stdev,
         reasons=reasons,
+        cheapness=cheap,
+        quality=quality,
+        setup=setup,
+        composite=composite,
+        near_miss=near_miss,
     )
+
+
+def _bank_intrinsic(sd: StockData, pb_max: float) -> tuple[float | None, float | None, str]:
+    """Justified P/B = ROE / 10% cost-of-equity. Falls back to the P/B cap."""
+    if sd.pb is None or sd.pb <= 0:
+        return None, None, "none"
+    if sd.roe is not None and sd.roe > 0:
+        justified_pb = (sd.roe / 100.0) / 0.10
+        mos = 1 - (sd.pb / justified_pb)
+        intrinsic = None
+        if sd.price and sd.bvps:
+            intrinsic = justified_pb * sd.bvps
+        return mos, intrinsic, "justified-pb"
+    mos = 1 - (sd.pb / pb_max)
+    return mos, None, "pb-proxy"
+
+
+def _reit_intrinsic(sd: StockData, pb_max: float) -> tuple[float | None, float | None, str]:
+    """Blend of P/B vs cap and dividend yield vs 6% required yield."""
+    if sd.pb is None or sd.pb <= 0:
+        return None, None, "none"
+    mos_pb = 1 - (sd.pb / pb_max)
+    y = sd.dividend_yield
+    if y is not None and y > 1:
+        y = y / 100.0
+    if y is not None and y > 0:
+        mos_yield = 1 - (0.06 / y)
+        mos = 0.5 * mos_pb + 0.5 * mos_yield
+        return mos, None, "pb+yield"
+    return mos_pb, None, "pb-proxy"
+
+
+def _clip01(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+def score_stock(
+    sd: StockData,
+    mos: float | None,
+    roe_mean: float | None,
+    roe_stdev: float | None,
+) -> tuple[float, float, float, float]:
+    """cheapness / quality / setup in [0,1], composite in [0,100].
+
+    Ranking used to be MoS-only, which is why the same deep-value names
+    (and the same REITs) occupied the shortlist every day.
+    """
+    cheap = _clip01((mos or 0.0) / 0.40)
+
+    q_parts: list[float] = []
+    roe_floor = 5.0 if sd.is_reit else 8.0 if sd.is_bank else 10.0
+    if sd.roe is not None:
+        q_parts.append(_clip01((sd.roe - roe_floor) / (2 * roe_floor)))
+    if sd.roic is not None:
+        q_parts.append(_clip01((sd.roic - 10.0) / 20.0))
+    if roe_mean and roe_stdev is not None and roe_mean != 0:
+        cv = abs(roe_stdev / roe_mean)
+        q_parts.append(_clip01(1.0 - cv / 0.6))
+    if sd.operating_margin is not None and not (sd.is_bank or sd.is_reit):
+        q_parts.append(_clip01(sd.operating_margin / 30.0))
+    quality = statistics.fmean(q_parts) if q_parts else 0.3
+
+    setup_parts: list[float] = []
+    if sd.pct_from_high is not None:
+        setup_parts.append(_clip01(-(sd.pct_from_high) / 0.40))
+    if sd.return_1y is not None:
+        setup_parts.append(_clip01(-(sd.return_1y) / 0.25))
+    setup = statistics.fmean(setup_parts) if setup_parts else 0.4
+
+    composite = 100.0 * (0.35 * cheap + 0.40 * quality + 0.25 * setup)
+    return cheap, quality, setup, composite
+
+
+_SOFT_REASON_NEEDLES = (
+    "margin of safety",
+    "operating margin",
+    "P/E too high",
+    "P/B ",
+    "FCF CAGR",
+    "ROE too volatile",
+)
+_HARD_REASON_NEEDLES = (
+    "fetch error",
+    "no price",
+    "market cap below",
+    "no positive P/E",
+    "no P/B",
+    "no ROE",
+    "no intrinsic",
+    "D/E ",
+    "positive FCF years",
+    "ROIC ",
+    "interest coverage",
+    "ROE trend declining",
+)
+
+
+def _is_near_miss(reasons: list[str]) -> bool:
+    if not reasons or len(reasons) > 2:
+        return False
+    if any(any(h in r for h in _HARD_REASON_NEEDLES) for r in reasons):
+        return False
+    return all(any(s in r for s in _SOFT_REASON_NEEDLES) for r in reasons)
+
+
+def group_key(sd: StockData) -> str:
+    if sd.is_reit:
+        return "REIT"
+    if sd.is_bank:
+        return "Bank"
+    return sd.sector or sd.industry or "Other"
+
+
+def pick_shortlist(
+    results: list[FilterResult],
+    max_n: int,
+    max_per_group: int = 2,
+) -> list[FilterResult]:
+    """Composite-ranked, sector-capped shortlist. Stops a 5-REIT telegram."""
+    passers = [r for r in results if r.passed]
+    passers.sort(key=lambda r: r.composite if r.composite is not None else -1, reverse=True)
+    picked: list[FilterResult] = []
+    counts: dict[str, int] = {}
+    for r in passers:
+        g = group_key(r.sd)
+        if counts.get(g, 0) >= max_per_group:
+            continue
+        picked.append(r)
+        counts[g] = counts.get(g, 0) + 1
+        if len(picked) >= max_n:
+            break
+    return picked
+
+
+def pick_wildcard(
+    results: list[FilterResult],
+    shortlist: list[FilterResult],
+) -> FilterResult | None:
+    """One beaten-up near-miss the hard filter dropped — a shake-up slot."""
+    taken = {r.sd.ticker for r in shortlist}
+    cands = [
+        r for r in results
+        if r.near_miss and r.sd.ticker not in taken
+        and r.composite is not None
+        and (r.sd.pct_from_high is None or r.sd.pct_from_high < -0.10)
+    ]
+    cands.sort(key=lambda r: r.composite or -1, reverse=True)
+    return cands[0] if cands else None
 
 
 def stage1(stocks: list[StockData]) -> list[FilterResult]:
     results = [evaluate(sd) for sd in stocks]
-    # rank passers by margin of safety desc
     results.sort(
-        key=lambda r: (r.passed, r.margin_of_safety if r.margin_of_safety is not None else -1),
+        key=lambda r: (r.passed, r.composite if r.composite is not None else -1),
         reverse=True,
     )
     return results
